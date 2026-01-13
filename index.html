@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>NEON // CHECKERS // REPLAY</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --cyber-blue: #00f3ff;
+      --cyber-green: #0aff0a;
+      --vile-red: #ff003c;
+      --vile-dark: #3a000e;
+      --bg-color: #030303;
+      --glass: rgba(10, 10, 10, 0.9);
+      --cell-size: min(11vw, 55px);
+    }
+
+    * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      background-color: var(--bg-color);
+      font-family: 'JetBrains Mono', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: var(--cyber-blue);
+    }
+
+    /* Scanlines */
+    body::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px);
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* --- LOADING SCREEN --- */
+    #loading-screen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #000; z-index: 200;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      transition: opacity 0.8s ease-out;
+    }
+    #loading-icon {
+      font-size: 5rem;
+      color: var(--vile-red);
+      text-shadow: 0 0 20px var(--vile-red);
+      margin-bottom: 20px;
+    }
+    .loading-text { font-family: 'Orbitron'; letter-spacing: 4px; font-size: 0.8rem; color: #555; }
+
+    /* --- MENUS --- */
+    #menu-screen {
+      position: absolute; top:0; left:0; width:100%; height:100%;
+      background: rgba(3,3,3,0.95); z-index: 50;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+    }
+    .menu-title { 
+        font-family: 'Orbitron'; font-size: 3rem; text-align: center; margin-bottom: 40px; 
+        text-shadow: 0 0 10px var(--cyber-blue);
+    }
+    .vile-text { color: var(--vile-red); text-shadow: 0 0 15px var(--vile-red); }
+
+    .menu-btn {
+      background: transparent; border: 1px solid var(--cyber-blue); color: var(--cyber-blue);
+      padding: 15px 30px; margin: 10px; font-family: 'Orbitron'; font-size: 1.2rem;
+      cursor: pointer; width: 280px; text-transform: uppercase; transition: 0.2s;
+    }
+    .menu-btn:hover { background: var(--cyber-blue); color: #000; box-shadow: 0 0 20px var(--cyber-blue); }
+    
+    .menu-btn.secondary { border-color: var(--vile-red); color: var(--vile-red); }
+    .menu-btn.secondary:hover { background: var(--vile-red); color: #000; box-shadow: 0 0 20px var(--vile-red); }
+
+    .diff-selector { display: flex; gap: 5px; margin-top: 5px; margin-bottom: 20px; }
+    .diff-btn { 
+      border: 1px solid #333; color: #666; background: transparent; 
+      padding: 8px 12px; font-family: 'JetBrains Mono'; cursor: pointer; font-size: 0.8rem;
+    }
+    .diff-btn.selected { border-color: var(--vile-red); color: var(--vile-red); box-shadow: inset 0 0 10px rgba(255,0,60,0.3); }
+
+    /* --- GAME UI --- */
+    #game-area { display: flex; flex-direction: column; align-items: center; width: 100%; }
+    
+    .hud { width: 100%; max-width: 450px; display: flex; justify-content: space-between; padding: 10px; font-family: 'Orbitron'; }
+    .hud-box { padding: 5px 10px; border: 1px solid #333; font-size: 0.9rem; }
+    .turn-indicator { color: var(--cyber-blue); text-shadow: 0 0 5px var(--cyber-blue); }
+    .turn-indicator.vile { color: var(--vile-red); text-shadow: 0 0 5px var(--vile-red); }
+
+    /* BOARD */
+    #board {
+      display: grid; grid-template-columns: repeat(8, 1fr);
+      width: calc(var(--cell-size) * 8); height: calc(var(--cell-size) * 8);
+      border: 2px solid #333; margin: 20px 0;
+      box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    }
+    
+    .cell {
+      width: var(--cell-size); height: var(--cell-size);
+      display: flex; justify-content: center; align-items: center;
+      font-size: 2.2rem; cursor: pointer; position: relative;
+    }
+    .cell.light { background: #151515; }
+    .cell.dark { background: #0a0a0a; }
+    
+    .cell.selected { background: rgba(0, 243, 255, 0.2); box-shadow: inset 0 0 15px var(--cyber-blue); }
+    .cell.forced-piece { box-shadow: inset 0 0 15px var(--cyber-green); animation: pulse 1s infinite; }
+    
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+    .valid-dot {
+      position: absolute; width: 12px; height: 12px;
+      background: var(--cyber-green); border-radius: 50%;
+      opacity: 0.6; box-shadow: 0 0 5px var(--cyber-green); pointer-events: none;
+    }
+    .capture-ring {
+      position: absolute; width: 100%; height: 100%;
+      border: 4px solid var(--vile-red); opacity: 0.5;
+      box-shadow: inset 0 0 10px var(--vile-red); pointer-events: none;
+    }
+
+    /* PIECES */
+    .piece { z-index: 10; transition: transform 0.2s; line-height: 1; }
+    .p-white { color: var(--cyber-blue); filter: drop-shadow(0 0 5px var(--cyber-blue)); }
+    .p-black { color: var(--vile-red); filter: drop-shadow(0 0 8px var(--vile-red)); }
+    .king-marker { text-shadow: 0 0 10px currentColor; font-weight: 900; }
+
+    /* DEATH ANIMATION (Glitch) */
+    .piece.dying {
+      animation: glitch-anim 0.4s forwards;
+      color: #fff !important;
+    }
+    @keyframes glitch-anim {
+      0% { transform: scale(1); clip-path: inset(0 0 0 0); }
+      20% { transform: translate(-2px, 2px); clip-path: inset(10% 0 80% 0); }
+      40% { transform: translate(2px, -2px); clip-path: inset(80% 0 10% 0); opacity: 0.8; }
+      60% { transform: scale(1.2); color: var(--vile-red); opacity: 0.5; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+
+    /* UTILS */
+    .hidden { display: none !important; }
+    
+    /* MODAL */
+    #modal-overlay {
+      position: absolute; top:0; left:0; width:100%; height:100%;
+      background: rgba(0,0,0,0.9); z-index: 60;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+    }
+    #modal-msg { font-family: 'Orbitron'; font-size: 2.5rem; color: #fff; margin-bottom: 20px; }
+    
+    #replay-controls {
+       margin-top: 15px; font-family: 'Orbitron'; color: #666; font-size: 0.9rem;
+       display: flex; gap: 10px; align-items: center;
+    }
+    .blink { animation: blinker 1s linear infinite; color: var(--vile-red); }
+    @keyframes blinker { 50% { opacity: 0; } }
+
+  </style>
+</head>
+<body>
+
+  <div id="loading-screen">
+    <div id="loading-icon">●</div>
+    <div class="loading-text">INITIALIZING TACTICAL CORE...</div>
+  </div>
+
+  <div id="menu-screen" class="hidden">
+    <div class="menu-title">NEON <span class="vile-text">CHECKERS</span></div>
+    
+    <button class="menu-btn" onclick="startGame('pvp')">PLAYER VS PLAYER</button>
+    
+    <div style="text-align: center; margin-top: 15px;">
+      <button class="menu-btn secondary" onclick="startGame('ai')">PLAYER VS AI</button>
+      <div class="diff-selector">
+        <button class="diff-btn" onclick="setDiff('easy')" id="btn-easy">SCOUT</button>
+        <button class="diff-btn selected" onclick="setDiff('normal')" id="btn-normal">TACTICIAN</button>
+        <button class="diff-btn" onclick="setDiff('hard')" id="btn-hard">MASTER</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-area" class="hidden">
+    <div class="hud">
+      <div class="hud-box" style="border-color:var(--cyber-blue)">P1: CYBER</div>
+      <div class="hud-box" id="turn-display" class="turn-indicator">CYBER TO MOVE</div>
+      <div class="hud-box" style="border-color:var(--vile-red)">P2: VILE</div>
+    </div>
+
+    <div id="board"></div>
+
+    <button class="menu-btn" style="font-size:0.8rem; padding:10px; width:auto;" onclick="toMenu()">ABORT GAME</button>
+    
+    <div id="replay-controls" class="hidden">
+       REPLAYING MOVE <span id="replay-step">0</span>/<span id="replay-total">0</span>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-msg">VILE WINS</div>
+    <div style="display:flex; gap:10px;">
+        <button class="menu-btn" onclick="startReplay()">WATCH REPLAY</button>
+        <button class="menu-btn secondary" onclick="toMenu()">MENU</button>
+    </div>
+  </div>
+
+<script>
+/**
+ * NEON CHECKERS ENGINE v2 // REPLAY + REAL LOGIC
+ */
+
+const PIECE_SYMBOLS = { man: '●', king: '◈' };
+const START_BOARD = [
+  '','b','','b','','b','','b',
+  'b','','b','','b','','b','',
+  '','b','','b','','b','','b',
+  '','','','','','','','',
+  '','','','','','','','',
+  'w','','w','','w','','w','',
+  '','w','','w','','w','','w',
+  'w','','w','','w','','w',''
+];
+
+// --- STATE ---
+const State = {
+  board: [],
+  turn: 'white', 
+  selectedIdx: null,
+  validMoves: [], 
+  mode: 'pvp',
+  difficulty: 'normal',
+  gameActive: false,
+  mustJumpFrom: null, // Logic: If a multi-jump is active, lock to this piece
+  
+  // Replay Data
+  history: [], // Array of board snapshots
+  isReplaying: false
+};
+
+const UI = {
+  loader: document.getElementById('loading-screen'),
+  loadIcon: document.getElementById('loading-icon'),
+  menu: document.getElementById('menu-screen'),
+  game: document.getElementById('game-area'),
+  board: document.getElementById('board'),
+  turn: document.getElementById('turn-display'),
+  modal: document.getElementById('modal-overlay'),
+  msg: document.getElementById('modal-msg'),
+  replayCtrl: document.getElementById('replay-controls'),
+  replayStep: document.getElementById('replay-step'),
+  replayTotal: document.getElementById('replay-total')
+};
+
+// --- LOADING SEQUENCE ---
+const loadIcons = ['●', '◈', '◎', '○'];
+let loadIdx = 0;
+let loadInterval = setInterval(() => {
+  UI.loadIcon.innerText = loadIcons[loadIdx];
+  loadIdx = (loadIdx + 1) % loadIcons.length;
+}, 300);
+
+window.onload = () => {
+  setTimeout(() => {
+    clearInterval(loadInterval);
+    UI.loader.classList.add('hidden');
+    UI.menu.classList.remove('hidden');
+  }, 1500); 
+};
+
+// --- MENU & FLOW ---
+function setDiff(d) {
+  State.difficulty = d;
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('btn-'+d).classList.add('selected');
+}
+
+function startGame(mode) {
+  State.mode = mode;
+  State.gameActive = true;
+  State.isReplaying = false;
+  State.turn = 'white';
+  State.board = [...START_BOARD];
+  State.selectedIdx = null;
+  State.validMoves = [];
+  State.mustJumpFrom = null;
+  State.history = [[...START_BOARD]]; // Initial Snapshot
+  
+  UI.menu.classList.add('hidden');
+  UI.game.classList.remove('hidden');
+  UI.modal.classList.add('hidden');
+  UI.replayCtrl.classList.add('hidden');
+  
+  renderBoard();
+  updateStatus();
+}
+
+function toMenu() {
+  State.gameActive = false;
+  State.isReplaying = false;
+  UI.game.classList.add('hidden');
+  UI.modal.classList.add('hidden');
+  UI.menu.classList.remove('hidden');
+}
+
+// --- REPLAY SYSTEM ---
+function startReplay() {
+  State.gameActive = false;
+  State.isReplaying = true;
+  UI.modal.classList.add('hidden');
+  UI.replayCtrl.classList.remove('hidden');
+  
+  let step = 0;
+  const total = State.history.length - 1;
+  UI.replayTotal.innerText = total;
+
+  // Reset board
+  State.board = State.history[0];
+  renderBoard();
+  
+  const playStep = () => {
+    if(!State.isReplaying || step >= total) return;
+    step++;
+    UI.replayStep.innerText = step;
+    
+    // Animate transition (basic)
+    State.board = State.history[step];
+    
+    // Find what changed for animation? (Optional complexity, skipping for robustness)
+    renderBoard();
+    
+    setTimeout(playStep, 800); // 800ms per move
+  };
+  
+  setTimeout(playStep, 800);
+}
+
+// --- RENDERING ---
+function renderBoard() {
+  UI.board.innerHTML = '';
+  
+  // Logic: Identify Forced Pieces
+  const forcedPieces = [];
+  if(State.gameActive && !State.isReplaying) {
+    const allMoves = getAllLegalMoves(State.board, State.turn);
+    const hasJump = allMoves.some(m => m.type === 'jump');
+    if(hasJump) {
+        allMoves.filter(m => m.type === 'jump').forEach(m => {
+            if(!forcedPieces.includes(m.from)) forcedPieces.push(m.from);
+        });
+    }
+  }
+
+  State.board.forEach((cell, i) => {
+    const el = document.createElement('div');
+    const r = Math.floor(i/8);
+    const c = i%8;
+    const isDark = (r + c) % 2 === 1;
+    el.className = `cell ${isDark ? 'dark' : 'light'}`;
+    
+    // Interaction
+    if(isDark && State.gameActive && !State.isReplaying) {
+        el.onclick = () => handleCellClick(i);
+    }
+    
+    // Forced Highlight
+    if(forcedPieces.includes(i) && State.mustJumpFrom === null) {
+        el.classList.add('forced-piece');
+    }
+    
+    // Piece Rendering
+    if(cell) {
+      const p = document.createElement('span');
+      const isWhite = cell === 'w' || cell === 'W';
+      const isKing = cell === 'W' || cell === 'B';
+      
+      p.className = `piece ${isWhite ? 'p-white' : 'p-black'} ${isKing ? 'king-marker' : ''}`;
+      p.innerText = isKing ? PIECE_SYMBOLS.king : PIECE_SYMBOLS.man;
+      
+      // Check for glitching piece (dying)
+      if(cell === 'X') {
+         p.className += ' dying';
+         p.innerText = isKing ? PIECE_SYMBOLS.king : PIECE_SYMBOLS.man; // Keep symbol while dying
+      }
+
+      el.appendChild(p);
+    }
+    
+    // Selection
+    if(State.selectedIdx === i) el.classList.add('selected');
+    
+    // Valid Moves Dots
+    const move = State.validMoves.find(m => m.to === i);
+    if(move) {
+      if(move.type === 'jump') {
+        const ring = document.createElement('div');
+        ring.className = 'capture-ring';
+        el.appendChild(ring);
+      } else {
+        const dot = document.createElement('div');
+        dot.className = 'valid-dot';
+        el.appendChild(dot);
+      }
+    }
+    
+    UI.board.appendChild(el);
+  });
+}
+
+function updateStatus() {
+  if(State.isReplaying) {
+     UI.turn.innerText = "REPLAY MODE";
+     UI.turn.className = "hud-box blink";
+     return;
+  }
+  const t = State.turn === 'white' ? 'CYBER' : 'VILE';
+  UI.turn.innerText = `${t} TO MOVE`;
+  UI.turn.className = `hud-box turn-indicator ${State.turn === 'black' ? 'vile' : ''}`;
+  if(State.mustJumpFrom !== null) UI.turn.innerText += " (DOUBLE JUMP)";
+}
+
+// --- INTERACTION ---
+function handleCellClick(idx) {
+  if(!State.gameActive || State.isReplaying) return;
+  if(State.mode === 'ai' && State.turn === 'black') return;
+
+  const piece = State.board[idx];
+  const isOwnPiece = piece && (State.turn === 'white' ? ['w','W'].includes(piece) : ['b','B'].includes(piece));
+
+  // 1. Select Piece
+  if(isOwnPiece) {
+    // If we are in a Multi-Jump sequence, we MUST select the active piece
+    if(State.mustJumpFrom !== null && idx !== State.mustJumpFrom) return;
+
+    // Logic: If ANY jump is available globally, only pieces that can jump are selectable
+    const allMoves = getAllLegalMoves(State.board, State.turn);
+    const hasGlobalJump = allMoves.some(m => m.type === 'jump');
+    
+    const myMoves = getValidMovesForPiece(State.board, idx);
+    const myCanJump = myMoves.some(m => m.type === 'jump');
+
+    // Rule: Forced Jump
+    if(hasGlobalJump && !myCanJump) return; // Cannot select this piece if it can't jump but others can
+
+    State.selectedIdx = idx;
+    
+    // Filter moves: If forced jump exists, only show jumps
+    if(hasGlobalJump) {
+        State.validMoves = myMoves.filter(m => m.type === 'jump');
+    } else {
+        State.validMoves = myMoves;
+    }
+    
+    renderBoard();
+    return;
+  }
+
+  // 2. Move
+  const move = State.validMoves.find(m => m.to === idx);
+  if(State.selectedIdx !== null && move) {
+    executeMove(move);
+  } else {
+    if(State.mustJumpFrom === null) {
+        State.selectedIdx = null;
+        State.validMoves = [];
+        renderBoard();
+    }
+  }
+}
+
+function executeMove(move) {
+  // 1. Update Board
+  const pieceChar = State.board[move.from];
+  State.board[move.to] = pieceChar;
+  State.board[move.from] = '';
+  
+  // 2. Handle Capture (Animation)
+  let capturedPiece = null;
+  if(move.type === 'jump') {
+     capturedPiece = State.board[move.capturedIdx];
+     // Mark as dying (visual only initially)
+     // We actually keep the piece there for a split second or render a particle?
+     // For simplicity and stability, we set it to 'X' (dying state) then remove it.
+     State.board[move.capturedIdx] = 'X'; 
+  }
+  
+  // 3. Promotion
+  let promoted = false;
+  const r = Math.floor(move.to/8);
+  if(pieceChar === 'w' && r === 0) { State.board[move.to] = 'W'; promoted = true; }
+  if(pieceChar === 'b' && r === 7) { State.board[move.to] = 'B'; promoted = true; }
+
+  // 4. Render (shows dying piece)
+  renderBoard();
+  State.selectedIdx = null;
+  State.validMoves = [];
+  
+  // 5. Finalize Move (Wait for animation if capture)
+  const delay = move.type === 'jump' ? 400 : 50;
+  
+  setTimeout(() => {
+     if(move.type === 'jump') {
+         State.board[move.capturedIdx] = ''; // Remove completely
+     }
+     
+     // Save Snapshot for Replay
+     State.history.push([...State.board]);
+
+     // 6. Multi-Jump Logic
+     // If it was a jump, NOT promoted, and CAN jump again -> turn continues
+     if(move.type === 'jump' && !promoted) {
+         const followUps = getValidMovesForPiece(State.board, move.to);
+         const canJumpAgain = followUps.some(m => m.type === 'jump');
+         
+         if(canJumpAgain) {
+             State.mustJumpFrom = move.to;
+             State.selectedIdx = move.to; // Auto-select
+             State.validMoves = followUps.filter(m => m.type === 'jump');
+             renderBoard();
+             updateStatus();
+             
+             // AI Auto-continue
+             if(State.mode === 'ai' && State.turn === 'black') {
+                 setTimeout(aiThink, 500);
+             }
+             return; // Turn does NOT change
+         }
+     }
+     
+     // Turn Ends
+     State.mustJumpFrom = null;
+     endTurn();
+     
+  }, delay);
+}
+
+function endTurn() {
+    // Win Check
+    const whiteCount = State.board.filter(p => p==='w'||p==='W').length;
+    const blackCount = State.board.filter(p => p==='b'||p==='B').length;
+    
+    if(blackCount === 0) { gameOver('white'); return; }
+    if(whiteCount === 0) { gameOver('black'); return; }
+    
+    // Check if next player has moves
+    State.turn = State.turn === 'white' ? 'black' : 'white';
+    
+    const nextMoves = getAllLegalMoves(State.board, State.turn);
+    if(nextMoves.length === 0) {
+        gameOver(State.turn === 'white' ? 'black' : 'white'); // No moves = loss
+        return;
+    }
+    
+    updateStatus();
+    renderBoard(); // Re-render to show forced pieces for new turn
+    
+    if(State.mode === 'ai' && State.turn === 'black') {
+        setTimeout(aiThink, 600);
+    }
+}
+
+function gameOver(winner) {
+  State.gameActive = false;
+  UI.modal.classList.remove('hidden');
+  UI.msg.innerText = `${winner === 'white' ? 'CYBER' : 'VILE'} WINS`;
+  UI.msg.style.color = winner === 'white' ? 'var(--cyber-blue)' : 'var(--vile-red)';
+}
+
+// --- LOGIC ENGINE ---
+
+function getAllLegalMoves(board, turn) {
+    let moves = [];
+    board.forEach((p, i) => {
+        if(p && ((turn==='white' && ['w','W'].includes(p)) || (turn==='black' && ['b','B'].includes(p)))) {
+             moves.push(...getValidMovesForPiece(board, i));
+        }
+    });
+    return moves;
+}
+
+function getValidMovesForPiece(board, idx) {
+  const p = board[idx];
+  if(!p || p === 'X') return []; // X is dying piece
+
+  const moves = [];
+  const r = Math.floor(idx/8);
+  const c = idx%8;
+  const isWhite = ['w','W'].includes(p);
+  const isKing = ['W','B'].includes(p);
+  
+  let dirs = (isKing) ? [-1, 1] : (isWhite ? [-1] : [1]);
+  const colDirs = [-1, 1];
+
+  dirs.forEach(dRow => {
+    colDirs.forEach(dCol => {
+      const nr = r + dRow;
+      const nc = c + dCol;
+      
+      if(nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+        const tIdx = nr*8 + nc;
+        
+        // 1. Move
+        if(board[tIdx] === '') {
+           moves.push({ from: idx, to: tIdx, type: 'move' });
+        } 
+        // 2. Jump
+        else {
+           const target = board[tIdx];
+           const isEnemy = isWhite ? ['b','B'].includes(target) : ['w','W'].includes(target);
+           if(isEnemy && target !== 'X') {
+               const jr = nr + dRow;
+               const jc = nc + dCol;
+               if(jr >= 0 && jr < 8 && jc >= 0 && jc < 8) {
+                   const jIdx = jr*8 + jc;
+                   if(board[jIdx] === '') {
+                       moves.push({ from: idx, to: jIdx, type: 'jump', capturedIdx: tIdx });
+                   }
+               }
+           }
+        }
+      }
+    });
+  });
+  return moves;
+}
+
+// --- AI (Minimax) ---
+function aiThink() {
+  const depth = State.difficulty === 'easy' ? 2 : (State.difficulty === 'normal' ? 4 : 6);
+  
+  // If we are in a multi-jump sequence, we only have one piece to check
+  let validMoves = [];
+  if(State.mustJumpFrom !== null) {
+      validMoves = getValidMovesForPiece(State.board, State.mustJumpFrom).filter(m => m.type === 'jump');
+  } else {
+      validMoves = getAllLegalMoves(State.board, 'black');
+      // Apply Forced Jump Logic to AI
+      const hasJump = validMoves.some(m => m.type === 'jump');
+      if(hasJump) validMoves = validMoves.filter(m => m.type === 'jump');
+  }
+
+  if(validMoves.length === 0) return; // Should be handled by endTurn, but safety first
+
+  // Use Minimax to pick best from validMoves
+  let bestMove = validMoves[0];
+  let bestScore = Infinity; // Black wants MIN score
+
+  // Small random shuffle to vary play
+  validMoves.sort(() => Math.random() - 0.5);
+
+  for(let m of validMoves) {
+      // Sim
+      const saved = [...State.board];
+      // Apply move logic manually for sim
+      State.board[m.to] = State.board[m.from];
+      State.board[m.from] = '';
+      if(m.type === 'jump') State.board[m.capturedIdx] = '';
+      
+      // We don't simulate full multi-jump depth in this simple AI, 
+      // just immediate outcome
+      const score = minimax(State.board, depth-1, -Infinity, Infinity, true);
+      
+      State.board = saved;
+      
+      if(score < bestScore) {
+          bestScore = score;
+          bestMove = m;
+      }
+  }
+  
+  executeMove(bestMove);
+}
+
+function minimax(board, depth, alpha, beta, isMaximizing) {
+  if(depth === 0) return evaluate(board);
+
+  // Simple generator, ignoring forced jump logic for deep recursion speed
+  // (In a pro engine, we would enforce rules recursively)
+  let moves = getAllLegalMoves(board, isMaximizing ? 'white' : 'black');
+  if(moves.length === 0) return isMaximizing ? -1000 : 1000;
+
+  if(isMaximizing) {
+      let maxEval = -Infinity;
+      for(let m of moves) {
+          const saved = [...board];
+          board[m.to] = board[m.from];
+          board[m.from] = '';
+          if(m.type === 'jump') board[m.capturedIdx] = '';
+          
+          const eval = minimax(board, depth-1, alpha, beta, false);
+          board = saved;
+          maxEval = Math.max(maxEval, eval);
+          alpha = Math.max(alpha, eval);
+          if(beta <= alpha) break;
+      }
+      return maxEval;
+  } else {
+      let minEval = Infinity;
+      for(let m of moves) {
+          const saved = [...board];
+          board[m.to] = board[m.from];
+          board[m.from] = '';
+          if(m.type === 'jump') board[m.capturedIdx] = '';
+          
+          const eval = minimax(board, depth-1, alpha, beta, true);
+          board = saved;
+          minEval = Math.min(minEval, eval);
+          beta = Math.min(beta, eval);
+          if(beta <= alpha) break;
+      }
+      return minEval;
+  }
+}
+
+function evaluate(board) {
+  let score = 0;
+  board.forEach((p, i) => {
+    if(!p || p==='X') return;
+    let val = (p==='W'||p==='B') ? 30 : 10;
+    // Center Control
+    const r = Math.floor(i/8), c = i%8;
+    if(c>1 && c<6 && r>1 && r<6) val += 2;
+    if(['w','W'].includes(p)) score += val;
+    else score -= val;
+  });
+  return score;
+}
+
+</script>
+</body>
+</html>
